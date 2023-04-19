@@ -11,7 +11,7 @@ def get_element(ancestor, selector = None, attribute = None, return_list = False
         if attribute:
             return ancestor.select_one(selector)[attribute].strip()
         return ancestor.select_one(selector).text.strip()
-    except AttributeError:
+    except (AttributeError , TypeError):
         return None
 
 selectors = {

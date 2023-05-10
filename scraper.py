@@ -1,53 +1,58 @@
-import requests
-import json
-from bs4 import BeautifulSoup
+import os
+import pandas as pd
+import numpy as np
+from matplotlib import pyplot as plt
 
-def get_element(ancestor, selector = None, attribute = None, return_list = False):
-    try:
-        if return_list:
-            return [tag.text.strip() for tag in ancestor.select(selector)].copy()
-        if not selector and attribute:
-            return ancestor[attribute]
-        if attribute:
-            return ancestor.select_one(selector)[attribute].strip()
-        return ancestor.select_one(selector).text.strip()
-    except (AttributeError , TypeError):
-        return None
+print(*[filename.split(".")[0] for filename in os.listdir("./opinions")], sep="\n")
 
-selectors = {
-    "opinion_id": [None, "data-entry-id"],
-    "author": ["span.user-post__author-name"],
-    "recommendation": ["span.user-post__author-recomendation > em"],
-    "score": ["span.user-post__score-count"],
-    "purchased": ["div.review-pz"],
-    "published_at": ["span.user-post__published > time:nth-child(1)","datetime"],
-    "purchased_at": ["span.user-post__published > time:nth-child(2)","datetime"],
-    "thumbs_up": ["button.vote-yes > span"],
-    "thumbs_down": ["button.vote-no > span"],
-    "content": ["div.user-post__text"],
-    "pros": ["div.review-feature__col:has(> div.review-feature__title--positives) > div.review-feature__item",None, True],
-    "cons": ["div.review-feature__col:has(> div.review-feature__title--negatives) > div.review-feature__item",None, True]
-}
+product_code = input("Podaj kod produktu: ")
 
-# product_code = input("Podaj kod produktu: ")
-product_code = "109506792"
-all_opinions = []
-url = f"https://www.ceneo.pl/{product_code}#tab=reviews"
-while(url):
-    print(url)
-    response = requests.get(url)
-    page = BeautifulSoup(response.text, 'html.parser')
-    opinions = page.select("div.js_product-review")
-    for opinion in opinions:
-        single_opinion = {}
-        for key, value in selectors.items():
-            single_opinion[key] = get_element(opinion,*value)
-        all_opinions.append(single_opinion)
-    try:
-        url = "https://www.ceneo.pl"+get_element(page, "a.pagination__next", "href")
-    except TypeError:
-        url = None
+opinions = pd.read_json(f"./opinions/{product_code}.json")
+# opinions.score = opinions.score.map(lambda x: float(x[:-2].replace(",",".")))
+opinions.score = opinions.score.map(lambda x: float(x.split("/")[0].replace(",",".")))
 
-print(len(all_opinions))
-with open(f"./opinions/{product_code}.json", "w", encoding="UTF-8") as jf:
-    json.dump(all_opinions, jf, indent=4,ensure_ascii=False)
+# opinions_count = len(opinions.index)
+opinions_count = opinions.shape[0]
+# pros_count = sum([False if len(p)==0 else True for p in opinions.pros])
+# cons_count = sum([False if len(c)==0 else True for c in opinions.cons])
+# pros_count = opinions.pros.map(lambda p: False if len(p)==0 else True).sum()
+# cons_count = opinions.cons.map(lambda c: False if len(c)==0 else True).sum()
+pros_count = opinions.pros.map(bool).sum()
+cons_count = opinions.cons.map(bool).sum()
+# avg_score = opinions.score.map(lambda x: float(x.split("/")[0].replace(",","."))).mean()
+avg_score = opinions.score.mean().round(2)
+print(f'''Dla produktu o kodzie {product_code} 
+dostępnych jest {opinions_count} opinii.
+Dla {pros_count} opinii dostępna jest lista zalet,
+a dla {cons_count} dostępna jest liczba wad. 
+Średnia ocena produktu to {avg_score}.''')
+
+# histogram częstości występowania poszczególnych ocen
+score = opinions.score.value_counts().reindex(list(np.arange(0,5.5,0.5)), fill_value = 0)
+score.plot.bar(color="hotpink")
+plt.xticks(rotation=0)
+plt.title("Histogram ocen")
+plt.xlabel("Liczba gwiazdek")
+plt.ylabel("Liczba opinii")
+for index, value in enumerate(score):
+    plt.text(index, value+0.5, str(value), ha="center")
+# plt.show()
+try:
+    os.mkdir("./plots")
+except FileExistsError:
+    pass
+plt.savefig(f"./plots/{product_code}_score.png")
+plt.close()
+
+# udział poszczególnych rekomendacji w ogólnej liczbie opinii
+recommendation = opinions["recommendation"].value_counts(dropna = False).sort_index()
+print(recommendation)
+recommendation.plot.pie(
+    label="", 
+    autopct="%1.1f%%",
+    labels = ["Nie polecam", "Polecam", "Nie mam zdania"],
+    colors = ["crimson", "forestgreen", "gray"]
+)
+plt.legend(bbox_to_anchor=(1.0,1.0))
+plt.savefig(f"./plots/{product_code}_recommendation.png")
+plt.close()
